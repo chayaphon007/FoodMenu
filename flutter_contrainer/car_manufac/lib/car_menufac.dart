@@ -1,6 +1,6 @@
 import 'package:car_manufac/car_mfr.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart';
+import 'package:http/http.dart' as http;
 
 class CarManufac extends StatefulWidget {
   const CarManufac({super.key});
@@ -10,29 +10,34 @@ class CarManufac extends StatefulWidget {
 }
 
 class _CarManufacState extends State<CarManufac> {
-  CarMfr? carMfr;
+  late Future<CarMfr?> futureCarMfr;
 
-  Future<CarMfr?> getCarMfr() async{
-    var url = "vpic.nhtsa.dot.gov";
+  // ฟังก์ชันดึงข้อมูลจาก API
+  Future<CarMfr?> getCarMfr() async {
+    const url = "vpic.nhtsa.dot.gov";
+    final uri =
+        Uri.https(url, "/api/vehicles/getallmanufacturers", {"format": "json"});
 
-    var uri = Uri.https(url, "/api/vehicles/getallmanufacturers", {"format": "json"});
-    // https://vpic.nhtsa.dot.gov/api/vehicles/getallmanufacturers?format=json&page=2
-    await Future.delayed(const Duration(seconds: 3));
-    var response = await get(uri);
-
-    carMfr = carMfrFromJson(response.body);
-    print(carMfr?.results![0].mfrName);
-    return carMfr;
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        return carMfrFromJson(response.body);
+      } else {
+        throw Exception("Failed to load data");
+      }
+    } catch (e) {
+      print("Error: $e");
+      return null;
+    }
   }
 
   @override
-
   void initState() {
     super.initState();
-    getCarMfr();
+    // ดึงข้อมูลเพียงครั้งเดียว
+    futureCarMfr = getCarMfr();
     print("Initiated....");
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -41,15 +46,35 @@ class _CarManufacState extends State<CarManufac> {
       appBar: AppBar(
         title: const Text("Car Manufacturers"),
       ),
-      body: FutureBuilder(
-        future: getCarMfr(), 
-        builder: (BuildContext context, AsyncSnapshot<dynamic> snapshot) {
-          if(snapshot.connectionState == ConnectionState.done){
-            return Text("Finished loading data ${carMfr?.results![0].mfrName}");
+      body: FutureBuilder<CarMfr?>(
+        future: futureCarMfr, // ใช้ Future ที่สร้างใน initState
+        builder: (BuildContext context, AsyncSnapshot<CarMfr?> snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator()); // แสดงโหลด
+          } else if (snapshot.hasError) {
+            return Center(
+                child: Text("Error: ${snapshot.error}")); // แสดงข้อความผิดพลาด
+          } else if (snapshot.hasData) {
+            final results = snapshot.data?.results ?? [];
+            if (results.isEmpty) {
+              return const Center(child: Text("No data available"));
+            }
+            // แสดงข้อมูลใน ListView
+            return ListView.builder(
+              itemCount: results.length,
+              itemBuilder: (context, index) {
+                final result = results[index];
+                return ListTile(
+                  title: Text(result.mfrName ?? "Unknown Manufacturer"),
+                  subtitle: Text(result.country ?? "Unknown Country"),
+                );
+              },
+            );
+          } else {
+            return const Center(child: Text("No data available"));
           }
-          return LinearProgressIndicator();
         },
-      )
+      ),
     );
   }
 }
